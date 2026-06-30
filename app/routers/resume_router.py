@@ -1,10 +1,12 @@
 from fastapi import FastAPI,APIRouter,Depends,UploadFile,Form,File,status,HTTPException
 from app.schemas import resume_analysis
+from app.schemas import job_match
 from app.core.database import get_db
 from sqlalchemy.orm import Session
 from app.services.pdf_service import PDFService
 from app.services.ai_service import AIService
 from app.models.resume_analysis import ResumeAnalysis
+from app.models.job_match import JobMatch
 router=APIRouter(
     prefix="/resumes",
     tags=["Resume Analysis"]
@@ -92,3 +94,38 @@ def delete_analysis(id:int,db:Session=Depends(get_db)):
     
     db.delete(analysis)
     db.commit()
+
+@router.post("/matches",response_model=job_match.JobMatchResponse,status_code=status.HTTP_201_CREATED)
+def job_match(file:UploadFile=File(...),job_description:str=Form(...),db:Session=Depends(get_db)):
+
+    resume_text=pdf_service.extract_text(file)
+
+    if not resume_text.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Could not extract text from PDF")
+    
+    match_analysis=ai_service.match_resume_wih_jb(
+        resume_text,
+        job_description
+        )
+    
+    db_match = JobMatch(
+        file_name=file.filename,
+        job_description=job_description,
+        resume_text=resume_text,
+        match_score=match_analysis["match_score"],
+        matched_keywords=match_analysis["matched_keywords"],
+        missing_keywords=match_analysis["missing_keywords"],
+        strengths=match_analysis["strengths"],
+        weaknesses=match_analysis["weaknesses"],
+        suggestions=match_analysis["suggestions"]
+    )
+    
+
+    db.add(db_match)
+    db.commit()
+    db.refresh(db_match)
+
+    return db_match
+   
+    
+
